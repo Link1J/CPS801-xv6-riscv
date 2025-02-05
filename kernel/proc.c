@@ -348,8 +348,10 @@ exit(int status)
 {
   struct proc *p = myproc();
 
-  if(p == initproc)
-    panic("init exiting");
+  if(p == initproc) {
+    (*(volatile uint32 *) 0x100000) = 0x5555;
+    // panic("init exiting");
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
