@@ -35,7 +35,7 @@ void wc(int fd, char *name, int format, int *total_l, int *total_w, int *total_c
     while ((n = read(fd, buf, sizeof(buf))) > 0)
     {
         c = c + n;
-        for (i = buf; i < (buf + sizeof(buf)); i++)
+        for (i = buf; i < (buf + n); i++)
         {
             cur = *i;
             // Assuming UTF-8 for input. Which is normal for Unix and Linux.
@@ -49,9 +49,9 @@ void wc(int fd, char *name, int format, int *total_l, int *total_w, int *total_c
             }
             else if ((cur >= '\t' && cur <= '\r') || cur == ' ')
             {
-                inword = 0;
                 if (cur == '\n')
                     l++;
+                inword = 0;
             }
             else if (!inword)
             {
