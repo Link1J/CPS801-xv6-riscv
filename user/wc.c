@@ -18,7 +18,7 @@ void write_output(char *name, int format, int l, int w, int c, int m)
     if ((format & NUMBER_OF_WORDS) != 0)
         printf("%d ", w);
     if ((format & NUMBER_OF_CHARS) != 0)
-        printf("%d ", m);
+        printf("%d ", c - m);
     if ((format & NUMBER_OF_BYTES) != 0)
         printf("%d ", c);
     printf("%s\n", name);
@@ -35,7 +35,6 @@ void wc(int fd, char *name, int format, int *total_l, int *total_w, int *total_c
     while ((n = read(fd, buf, sizeof(buf))) > 0)
     {
         c = c + n;
-        m = m + n;
         for (i = buf; i < (buf + sizeof(buf)); i++)
         {
             cur = *i;
@@ -44,7 +43,7 @@ void wc(int fd, char *name, int format, int *total_l, int *total_w, int *total_c
             // All UTF-8 continuing bytes are in the format 0b10xxxxxx.
             if ((cur & 0b11000000) == 0b10000000)
             {
-                m--;
+                m++;
                 // No inword assignement here. We have to be in a word to get here.
                 // Otherwise we are dealing with invalid UTF-8.
             }
@@ -111,7 +110,7 @@ char **parse_args(int argc, char **argv, char **items, int *output)
                     exit(1);
                 }
             }
-            if (l > 2)
+            if (l > 1)
                 continue;
         }
         *items_end = argv[i];
