@@ -693,3 +693,111 @@ procdump(void)
     printf("\n");
   }
 }
+
+int
+atoi(const char *s)
+{
+  int n;
+
+  n = 0;
+  while('0' <= *s && *s <= '9')
+    n = n*10 + *s++ - '0';
+  return n;
+}
+
+int parsePIDs(char* args, int *pids)
+{
+  int n = strlen(args);
+  char pidstr[10];
+  int pidstrI = 0;
+  int pidsI = 0;
+  for (int i = 0; i < n; i++){
+    while (args[i] != ',' && i < n) {
+      pidstr[pidstrI] = args[i];
+      pidstrI++;
+      if (pidstrI >= 10) return -1;
+      i++;
+    }
+    if (pidstrI == 0) return -1;
+    pidstr[pidstrI] = '\0';
+    pids[pidsI] = atoi(pidstr);
+    for (int j = 0; j < 10; j++) pidstr[j] = '\0';
+    pidsI++;
+    pidstrI = 0;
+  }
+
+  pids[pidsI] = -1;
+  return 0;
+}
+
+// Lists process data in detail
+int
+ps(int argc, char *flags[])
+{
+  int onlyRunningProcesses = 0;
+  int longList = 0;
+
+  int pidFilter = 0;
+  int pids[NPROC];
+  for (int i = 1; i < argc; i++)
+  {
+    if (strncmp("r", flags[i], 1) == 0) {
+      onlyRunningProcesses = 1;
+    } else if (strncmp("-l", flags[i], 2) == 0){
+      longList = 1;
+    } else if (strncmp("-p", flags[i], 2) == 0) {
+      i++;
+      if (parsePIDs(flags[i], pids) == 0) {
+        pidFilter = 1;
+      }
+    } 
+  }
+
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [USED]      "used",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  struct proc *p;
+  char *state;
+
+  if (longList) {
+    printf("PID\tPPID\tAddr\t\tState\tSize\tCmd\n");
+  } else {
+    printf("PID\tCmd\n");
+  }
+  for(p = proc; p < &proc[NPROC]; p++){
+    if (p->state == UNUSED) continue;
+    if (p->state != RUNNING && onlyRunningProcesses) continue;
+    if (pidFilter){
+      int validPid = 0;
+      for (int i = 0; pids[i] != -1; i++){
+        if (p->pid == pids[i]){
+          validPid = 1;
+          break;
+        }
+      }
+
+      if (!validPid) continue;
+    }
+
+    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+      state = states[p->state];
+    else
+      state = "UNKNOWN";
+    if (longList) {
+      int ppid;
+      if (p->parent == NULL) ppid = 0;
+      else ppid = p->parent->pid;
+
+      printf("%d\t%d\t%ld\t%s\t%ld\t%s\n", p->pid, ppid, p->kstack, state, p->sz, p->name);
+    } else {
+      printf("%d\t%s\n", p->pid, p->name);
+    }
+  }
+
+  return 1;
+}
