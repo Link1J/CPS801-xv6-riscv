@@ -461,7 +461,7 @@ scheduler(void)
     // First pass to find the highest priority
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if((p->state == RUNNABLE ||  p->state == RUNNING) && p->priority < highest_priority) {
+      if(p->state == RUNNABLE && p->priority < highest_priority) {
         highest_priority = p->priority;
       }
       release(&p->lock);
@@ -472,9 +472,6 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE && p->priority == highest_priority) {
-        if(c->proc && c->proc->priority > highest_priority) {
-          c->proc->state = RUNNABLE; // Demote the current process
-        }
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
