@@ -15,6 +15,7 @@ void run_child(int priority, const char *name, int loops) {
 }
 
 int main() {
+    if (fork() == 0) run_child(4, "Child 0 (Priority=4)", 5);
     if (fork() == 0) run_child(0, "Child 1 (Priority=0)", 5);  // Highest priority
     if (fork() == 0) run_child(1, "Child 2 (Priority=1)", 5);
     if (fork() == 0) run_child(2, "Child 3 (Priority=2)", 5);
