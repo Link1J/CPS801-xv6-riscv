@@ -132,3 +132,14 @@ sys_ps(void)
     kfree(argv[i]);
   return -1;
 }
+
+
+uint64
+sys_set_priority(void) {
+  int priority;
+  
+  // Directly check the result of argraw() instead of relying on return value
+  argint(0, &priority); 
+  set_priority(priority);  // Set the process priority
+  return 0;
+}
