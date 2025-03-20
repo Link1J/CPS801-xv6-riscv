@@ -81,6 +81,8 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+extern int contextSwitches;
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -106,6 +108,7 @@ struct proc {
   char name[16];               // Process name (debugging)
 
   int priority;             // Process priority
+  int swtch_count;          // Context switch count (debugging)
 };
 
 // Function to set the priority of the current process

@@ -15,6 +15,8 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
+int contextSwitches = 0;
+
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
@@ -147,6 +149,7 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   p->priority = 2;  // Default priority
+  p->swtch_count = 0;
 
   return p;
 }
@@ -171,6 +174,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->swtch_count = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -475,6 +479,8 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+        contextSwitches++;
+        // printf("At %d context switches\n", contextSwitches);
         c->proc = 0; // Process done running
         found = 1;
       }
@@ -511,6 +517,7 @@ sched(void)
     panic("sched interruptible");
 
   intena = mycpu()->intena;
+  p->swtch_count++;
   swtch(&p->context, &mycpu()->context);
   mycpu()->intena = intena;
 }

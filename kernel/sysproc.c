@@ -143,3 +143,9 @@ sys_set_priority(void) {
   set_priority(priority);  // Set the process priority
   return 0;
 }
+
+uint64
+sys_get_ctx_swtch_count(void)
+{
+  return myproc()->swtch_count;
+}
