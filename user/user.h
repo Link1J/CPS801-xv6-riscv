@@ -23,6 +23,7 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int ps(int, char*[]);
+int get_ctx_swtch_count(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

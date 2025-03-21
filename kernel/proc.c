@@ -168,6 +168,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->swtchCount = 0;
   p->state = UNUSED;
 }
 
@@ -463,6 +464,7 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        p->swtchCount++;
         swtch(&c->context, &p->context);
 
         // Process is done running for now.

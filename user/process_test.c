@@ -13,7 +13,7 @@ void run_child(const char *name, int loops) {
     int end_time = uptime(); // Record end time.
     int completion_time = end_time - start_time; // Calculate process duration.
 
-    fprintf(2, "%s (PID: %d) exiting | Completion Time: %d ticks\n", name, getpid(), completion_time);
+    fprintf(2, "%s (PID: %d) exiting | Completion Time: %d ticks | Context Switch Count: %d\n", name, getpid(), completion_time, get_ctx_swtch_count());
     exit(0);
 }
 
