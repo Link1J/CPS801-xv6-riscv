@@ -132,3 +132,9 @@ sys_ps(void)
     kfree(argv[i]);
   return -1;
 }
+
+uint64 
+sys_get_ctx_swtch_count(void)
+{
+  return myproc()->swtchCount;
+}

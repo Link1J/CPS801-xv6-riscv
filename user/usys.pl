@@ -37,3 +37,4 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("ps");
+entry("get_ctx_swtch_count")
