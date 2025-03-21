@@ -6,7 +6,16 @@
 #include "proc.h"
 #include "defs.h"
 
+// This lock was protecting ticks.
+// It isn't need to proctect ticks anymore, but is needed for `sys_sleep` to work.
 struct spinlock tickslock;
+
+// This is an atomic variable. This variable can not be accessed via normal means, so you must use `__atomic` 
+// function provided by GCC. Otherwise there can be bugs. The `__atomic` functions do not need a header to use.
+//
+// Because this is an atomic variable, we don't need a lock to proctect access to it. The CPU will protect
+// access to the variable for us. But we need to use special functions so that the compiler knows that we
+// want the CPU to protect access to the variable.
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
@@ -164,10 +173,8 @@ void
 clockintr()
 {
   if(cpuid() == 0){
-    acquire(&tickslock);
-    ticks++;
+    __atomic_add_fetch(&ticks, 1, __ATOMIC_SEQ_CST);
     wakeup(&ticks);
-    release(&tickslock);
   }
 
   // ask for the next timer interrupt. this also clears

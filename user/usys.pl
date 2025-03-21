@@ -37,3 +37,6 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("ps");
+entry("set_priority");
+entry("get_ctx_swtch_count");
+entry("getburst");

@@ -22,6 +22,10 @@ sys_getpid(void)
 }
 
 uint64
+sys_getburst(void){
+  return myproc()->burst;
+}
+uint64
 sys_fork(void)
 {
   return fork();
@@ -48,6 +52,10 @@ sys_sbrk(void)
   return addr;
 }
 
+// Allow access to a variable in `trap.c`.
+// It is only needed for `sys_sleep`.
+extern struct spinlock tickslock;
+
 uint64
 sys_sleep(void)
 {
@@ -57,16 +65,15 @@ sys_sleep(void)
   argint(0, &n);
   if(n < 0)
     n = 0;
-  acquire(&tickslock);
-  ticks0 = ticks;
-  while(ticks - ticks0 < n){
+  ticks0 = __atomic_load_n(&ticks, __ATOMIC_SEQ_CST);
+  while(__atomic_load_n(&ticks, __ATOMIC_SEQ_CST) - ticks0 < n){
     if(killed(myproc())){
-      release(&tickslock);
       return -1;
     }
+    acquire(&tickslock); // Needed to make the `sleep` call below work
     sleep(&ticks, &tickslock);
+    release(&tickslock);
   }
-  release(&tickslock);
   return 0;
 }
 
@@ -85,10 +92,7 @@ uint64
 sys_uptime(void)
 {
   uint xticks;
-
-  acquire(&tickslock);
-  xticks = ticks;
-  release(&tickslock);
+  xticks = __atomic_load_n(&ticks, __ATOMIC_SEQ_CST);
   return xticks;
 }
 
@@ -131,4 +135,21 @@ sys_ps(void)
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
     kfree(argv[i]);
   return -1;
+}
+
+
+uint64
+sys_set_priority(void) {
+  int priority;
+  
+  // Directly check the result of argraw() instead of relying on return value
+  argint(0, &priority); 
+  set_priority(priority);  // Set the process priority
+  return 0;
+}
+
+uint64
+sys_get_ctx_swtch_count(void)
+{
+  return myproc()->swtch_count;
 }
