@@ -22,6 +22,10 @@ sys_getpid(void)
 }
 
 uint64
+sys_getburst(void){
+  return myproc()->burst;
+}
+uint64
 sys_fork(void)
 {
   return fork();
@@ -131,4 +135,15 @@ sys_ps(void)
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
     kfree(argv[i]);
   return -1;
+}
+
+
+uint64
+sys_set_priority(void) {
+  int priority;
+  
+  // Directly check the result of argraw() instead of relying on return value
+  argint(0, &priority); 
+  set_priority(priority);  // Set the process priority
+  return 0;
 }

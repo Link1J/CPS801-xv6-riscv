@@ -146,6 +146,8 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->priority = 2;  // Default priority
+  p->burst = 0; 
   return p;
 }
 
@@ -446,7 +448,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
+  int start, end; 
   c->proc = 0;
   for(;;){
     // The most recent process to run may have had interrupts
@@ -454,20 +456,29 @@ scheduler(void)
     // processes are waiting.
     intr_on();
 
+    int highest_priority = 4;
+
+    // First pass to find the highest priority
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && p->priority < highest_priority) {
+        highest_priority = p->priority;
+      }
+      release(&p->lock);
+    }
+
+    // Second pass to round-robin among processes with the highest priority
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
+      if(p->state == RUNNABLE && p->priority == highest_priority) {
         p->state = RUNNING;
         c->proc = p;
+        start = ticks; 
         swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
+        c->proc = 0; // Process done running
+        end = ticks; 
+        p->burst += (end - start); 
         found = 1;
       }
       release(&p->lock);
@@ -800,4 +811,14 @@ ps(int argc, char *flags[])
   }
 
   return 1;
+}
+
+
+
+
+void set_priority(int new_priority) {
+  struct proc *p = myproc();
+  if (new_priority >= 0 && new_priority <= 4) {
+    p->priority = new_priority;
+  }
 }
