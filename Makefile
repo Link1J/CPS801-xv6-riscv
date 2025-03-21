@@ -134,6 +134,7 @@ UPROGS=\
 	$U/_ls\
 	$U/_mkdir\
 	$U/_priority_test\
+	$U/_process_test\
 	$U/_rm\
 	$U/_sh\
 	$U/_stressfs\
