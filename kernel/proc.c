@@ -150,6 +150,7 @@ found:
 
   p->priority = 2;  // Default priority
   p->swtch_count = 0;
+  p->burst = 0; 
 
   return p;
 }
@@ -175,6 +176,7 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
   p->swtch_count = 0;
+  p->burst = 0; 
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -452,7 +454,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
+  int start, end; 
   c->proc = 0;
   for(;;){
     // The most recent process to run may have had interrupts
@@ -478,10 +480,13 @@ scheduler(void)
       if(p->state == RUNNABLE && p->priority == highest_priority) {
         p->state = RUNNING;
         c->proc = p;
+        start = ticks; 
         swtch(&c->context, &p->context);
         contextSwitches++;
         // printf("At %d context switches\n", contextSwitches);
         c->proc = 0; // Process done running
+        end = ticks; 
+        p->burst += (end - start); 
         found = 1;
       }
       release(&p->lock);
@@ -816,7 +821,6 @@ ps(int argc, char *flags[])
 
   return 1;
 }
-
 
 void set_priority(int new_priority) {
   struct proc *p = myproc();

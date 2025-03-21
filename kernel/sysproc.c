@@ -22,6 +22,10 @@ sys_getpid(void)
 }
 
 uint64
+sys_getburst(void){
+  return myproc()->burst;
+}
+uint64
 sys_fork(void)
 {
   return fork();

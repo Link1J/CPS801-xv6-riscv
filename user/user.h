@@ -25,6 +25,7 @@ int uptime(void);
 int ps(int, char*[]);
 int set_priority(int priority);
 int get_ctx_swtch_count(void);
+int getburst(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
