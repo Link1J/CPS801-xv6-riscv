@@ -7,11 +7,15 @@
 #include "defs.h"
 
 // This lock was protecting ticks.
-// It doesn't anymore, but is needed for `sys_sleep` to work.
+// It isn't need to proctect ticks anymore, but is needed for `sys_sleep` to work.
 struct spinlock tickslock;
-// This is an atomic variable. C11 added a way to note this in the type system, but we only have C99.
-// This variable can not be accessed via normal means, and you must use `__atomic` builtins provided by GCC.
-// Otherwise there can be bugs.
+
+// This is an atomic variable. This variable can not be accessed via normal means, so you must use `__atomic` 
+// function provided by GCC. Otherwise there can be bugs. The `__atomic` functions do not need a header to use.
+//
+// Because this is an atomic variable, we don't need a lock to proctect access to it. The CPU will protect
+// access to the variable for us. But we need to use special functions so that the compiler knows that we
+// want the CPU to protect access to the variable.
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
