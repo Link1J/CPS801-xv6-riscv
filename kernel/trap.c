@@ -6,7 +6,12 @@
 #include "proc.h"
 #include "defs.h"
 
+// This lock was protecting ticks.
+// It doesn't anymore, but is needed for `sys_sleep` to work.
 struct spinlock tickslock;
+// This is an atomic variable. C11 added a way to note this in the type system, but we only have C99.
+// This variable can not be accessed via normal means, and you must use `__atomic` builtins provided by GCC.
+// Otherwise there can be bugs.
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
@@ -164,10 +169,8 @@ void
 clockintr()
 {
   if(cpuid() == 0){
-    acquire(&tickslock);
-    ticks++;
+    __atomic_add_fetch(&ticks, 1, __ATOMIC_SEQ_CST);
     wakeup(&ticks);
-    release(&tickslock);
   }
 
   // ask for the next timer interrupt. this also clears

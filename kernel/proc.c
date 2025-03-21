@@ -480,12 +480,12 @@ scheduler(void)
       if(p->state == RUNNABLE && p->priority == highest_priority) {
         p->state = RUNNING;
         c->proc = p;
-        start = ticks; 
+        start = __atomic_load_n(&ticks, __ATOMIC_SEQ_CST); 
         swtch(&c->context, &p->context);
         contextSwitches++;
         // printf("At %d context switches\n", contextSwitches);
         c->proc = 0; // Process done running
-        end = ticks; 
+        end = __atomic_load_n(&ticks, __ATOMIC_SEQ_CST); 
         p->burst += (end - start); 
         found = 1;
       }
