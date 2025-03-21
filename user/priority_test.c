@@ -14,8 +14,9 @@ void run_child(int priority, const char *name, int loops) {
 
   int end_time = uptime(); // Record end time.
   int completion_time = end_time - start_time; // Calculate process duration.
+  int burst_time = getburst();
 
-  fprintf(2, "%s (PID: %d) exiting, switch count: %d, completion time: %d ticks\n\n", name, getpid(), get_ctx_swtch_count(), completion_time);
+  fprintf(2, "%s (PID: %d) exiting, switch count: %d, burst time: %d,  completion time: %d ticks\n\n", name, getpid(), get_ctx_swtch_count(), burst_time,  completion_time);
   exit(0);
 }
 
@@ -27,7 +28,8 @@ void run_default_child(const char *name, int loops){
   }
   int end_time = uptime(); // Record end time.
   int completion_time = end_time - start_time; // Calculate process duration.
-  fprintf(2, "%s (PID: %d) exiting, switch count: %d, completion time: %d ticks\n", name, getpid(), get_ctx_swtch_count(), completion_time);
+  int burst_time = getburst();
+  fprintf(2, "%s (PID: %d) exiting, switch count: %d, burst time: %d, completion time: %d ticks\n", name, getpid(), get_ctx_swtch_count(),  burst_time, completion_time);
   exit(0);
 
 }
@@ -50,7 +52,8 @@ void run_dynamic_child(int start_priority, int end_priority, const char *name, i
   }
   int end_time = uptime(); // Record end time.
   int completion_time = end_time - start_time; // Calculate process duration.
-  fprintf(2, "Child (PID: %d, Priority: %d) exiting, switch count: %d, completion time: %d ticks\n", getpid(), end_priority,get_ctx_swtch_count(), completion_time);
+  int burst_time = getburst();
+  fprintf(2, "Child (PID: %d, Priority: %d) exiting, switch count: %d, burst time: %d, completion time: %d ticks\n", getpid(), end_priority,get_ctx_swtch_count(), burst_time, completion_time);
   
   exit(0);
 }
