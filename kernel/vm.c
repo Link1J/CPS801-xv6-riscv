@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h" 
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -448,4 +450,41 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void insert_into_lru(struct proc *p, struct page_info *page) {
+  // Insert page at the head of the LRU list for this process
+  page->next = p->lru_head;
+  page->prev = 0;
+
+  // If the list isn't empty, update the previous head's prev pointer
+  if (p->lru_head)
+      p->lru_head->prev = page;
+
+  // Now the new page is the head
+  p->lru_head = page;
+
+  // If the list was empty, the tail is also the new page
+  if (!p->lru_tail)
+      p->lru_tail = page;
+}
+
+void remove_from_lru(struct proc *p, struct page_info *page) {
+  // Adjust the pointers to remove the page from the list
+  if (page->prev)
+      page->prev->next = page->next;
+  if (page->next)
+      page->next->prev = page->prev;
+
+  // If the page is the head, update the head
+  if (p->lru_head == page)
+      p->lru_head = page->next;
+
+  // If the page is the tail, update the tail
+  if (p->lru_tail == page)
+      p->lru_tail = page->prev;
+
+  // Nullify the page's next and prev to avoid dangling pointers
+  page->next = NULL;
+  page->prev = NULL;
 }
