@@ -7,6 +7,8 @@
 #include "fs.h"
 #include "spinlock.h" 
 #include "proc.h"
+#include "vm.h"
+#include "lru.h"
 
 /*
  * the kernel's page table.
@@ -165,6 +167,31 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+
+    struct page_info *page = find_page_info((uint)va);
+    if (page) {
+      // Move page to front of LRU list
+      remove_from_lru(page);
+      insert_into_lru(page);
+    }else{
+      struct page_info *new_page;
+      // Allocate a page_info struct and associate it with the new page
+      new_page = (struct page_info *)kalloc();
+      if (!new_page) {
+        panic("mappages: out of memory");  // Out of memory for the page_info struct
+      }
+      // Fill in the page_info struct 
+      new_page->va = a;               // Set the virtual address of the page
+      new_page->pa = pa;               // Set the physical address of the page
+      new_page->in_swap = 0;           // Initially, the page is not swapped
+      new_page->next = 0;           // No next page in the LRU list yet
+      new_page->prev = 0;           // No previous page in the LRU list yet
+      new_page->swap_offset = 0;       // No swap offset yet
+
+      // Insert the page_info struct into the LRU list
+      insert_into_lru(new_page);
+    }
+
     if(a == last)
       break;
     a += PGSIZE;
@@ -450,41 +477,4 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
-}
-
-void insert_into_lru(struct proc *p, struct page_info *page) {
-  // Insert page at the head of the LRU list for this process
-  page->next = p->lru_head;
-  page->prev = 0;
-
-  // If the list isn't empty, update the previous head's prev pointer
-  if (p->lru_head)
-      p->lru_head->prev = page;
-
-  // Now the new page is the head
-  p->lru_head = page;
-
-  // If the list was empty, the tail is also the new page
-  if (!p->lru_tail)
-      p->lru_tail = page;
-}
-
-void remove_from_lru(struct proc *p, struct page_info *page) {
-  // Adjust the pointers to remove the page from the list
-  if (page->prev)
-      page->prev->next = page->next;
-  if (page->next)
-      page->next->prev = page->prev;
-
-  // If the page is the head, update the head
-  if (p->lru_head == page)
-      p->lru_head = page->next;
-
-  // If the page is the tail, update the tail
-  if (p->lru_tail == page)
-      p->lru_tail = page->prev;
-
-  // Nullify the page's next and prev to avoid dangling pointers
-  page->next = NULL;
-  page->prev = NULL;
 }

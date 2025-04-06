@@ -11,6 +11,7 @@
 #include "proc.h"
 #include "fs.h"
 #include "vm.h"
+#include "lru.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -65,28 +66,6 @@ kfree(void *pa)
   release(&kmem.lock);
 }
 
-void evict_page(struct proc *p) {
-  // Select the Least Recently Used (LRU) page (tail of the LRU list)
-  struct page_info *victim = p->lru_tail;
-
-  // If there is no page to evict, return
-  if (victim == NULL) {
-    return;  // No page to evict
-  }
-
-  // Remove from LRU list
-  remove_from_lru(p, victim);
-
-  // Write the page to swap space (if necessary)
-  if (victim->in_swap) {
-    swap_out_page(p, victim);  // Swap out the page if it was in swap
-  }
-
-  // Free the physical page after it's written to swap
-  // kfree((void*)victim->pa);
-  kfree((void *)(unsigned long)victim->pa);
-}
-
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
@@ -105,7 +84,7 @@ void *kalloc(void) {
 
   // No free memory, trigger page eviction
   if (!r && p) {
-    evict_page(p);  // Pass the current process to evict_page
+    evict_page(); // Evict a page from the process's memory
     release(&kmem.lock);
     return kalloc();  // Try allocation again after eviction
   }

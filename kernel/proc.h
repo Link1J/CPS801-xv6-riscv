@@ -81,16 +81,6 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-
-struct page_info {
-    uint va;                 // Virtual address of the page
-    uint pa;                 // Physical address (if in memory)
-    struct page_info *next;  // Next page in LRU list
-    struct page_info *prev;  // Previous page in LRU list
-    int in_swap;             // 1 if the page is in swap, 0 if in memory
-    uint swap_offset;        // Disk offset if swapped
-};
-
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -114,7 +104,4 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-
-  struct page_info *lru_head;  // Head of LRU list
-  struct page_info *lru_tail;  // Tail of LRU list
 };

@@ -21,6 +21,7 @@
 #include "buf.h"
 #include "file.h"
 #include "vm.h"
+#include "lru.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // there should be one superblock per disk device, but we run with
@@ -698,16 +699,16 @@ nameiparent(char *path, char *name)
 }
 
 
+// Swap in a page by reading it from the swap file
+void swap_in_page(uint va) {
+  struct page_info *page = lru_head;
 
-void swap_in_page(struct proc *p, uint va) {
-  struct page_info *page = p->lru_head;
-
-  // Iterate through the LRU list to find the page corresponding to va
+  // Iterate through the global LRU list to find the page corresponding to va
   while (page != 0) {
     if (page->va == va) {
       break;  // Page found
     }
-    page = page->next;  // Move to the next page in the LRU list
+    page = page->next;  // Move to the next page in the global LRU list
   }
 
   // If the page wasn't found or it's not swapped out, return
@@ -744,15 +745,15 @@ void swap_in_page(struct proc *p, uint va) {
   }
 
   // Map the newly allocated page into the process' memory
-  if (mappages(p->pagetable, va, PGSIZE, (uint64)new_page, PTE_W | PTE_U | PTE_V) < 0) {
+  if (mappages(myproc()->pagetable, va, PGSIZE, (uint64)new_page, PTE_W | PTE_U | PTE_V) < 0) {
     panic("swap_in_page: mappages failed");
     releasesleep(&ip->lock);
     kfree(new_page);  // Free the allocated memory before returning
     return;
   }
 
-  // Insert the newly mapped page into the LRU list for the process
-  insert_into_lru(p, page);
+  // Insert the newly mapped page into the global LRU list
+  insert_into_lru(page);
 
   // Update the page's physical address and mark it as no longer in swap
   page->pa = (uint64)new_page;
@@ -763,7 +764,7 @@ void swap_in_page(struct proc *p, uint va) {
 }
 
 // Swap out a page by writing it to the swap file
-void swap_out_page(struct proc *p, struct page_info *page) {
+void swap_out_page(struct page_info *page) {
   struct inode *ip;
   uint block;
 
@@ -796,4 +797,65 @@ void swap_out_page(struct proc *p, struct page_info *page) {
 
   // Free the physical page after writing it to the swap file
   kfree((void *)(unsigned long)page->pa);
+
+  // Remove the page from the global LRU list since it's no longer in memory
+  remove_from_lru(page);
+}
+
+
+struct inode* create_swapfile(void) {
+  struct inode *ip, *dp;
+  char name[DIRSIZ] = "swapfile";
+  // Obtain the root directory inode
+  dp = iget(ROOTDEV, ROOTINO);
+  ilock(dp);
+  printf("create_swapfile: found root directory\n");
+
+  // Check if the swapfile already exists
+  if ((ip = dirlookup(dp, name, 0)) != 0) {
+    printf("create_swapfile: found existing swapfile %p\n", ip);
+    iunlockput(dp);
+    ilock(ip);
+    if (ip->type == T_FILE)
+      return ip;
+    iunlockput(ip);
+    return 0;
+  }
+
+  // Allocate a new inode for the swapfile
+  if ((ip = ialloc(dp->dev, T_FILE)) == 0) {
+    printf("create_swapfile: ialloc failed\n");
+    iunlockput(dp);
+    return 0;
+  }
+  printf("create_swapfile: allocated inode %p\n", ip);
+  ilock(ip);
+  ip->major = 0;
+  ip->minor = 0;
+  ip->nlink = 1;
+  iupdate(ip);
+
+  if (dirlink(dp, name, ip->inum) < 0) {
+    printf("create_swapfile: dirlink failed\n");
+    ip->nlink = 0;
+    iupdate(ip);
+    iunlockput(ip);
+    iunlockput(dp);
+    return 0;
+  }
+  printf("create_swapfile: dirlink succeeded\n");
+  iunlockput(dp);
+  return ip;
+}
+
+
+void init_swapfile() {
+  printf("Init swapfile...\n");
+  begin_op();
+  struct inode *swapip = create_swapfile();
+  end_op();
+
+  if (swapip == 0){
+    panic("Failed to create swapfile");
+  }
 }

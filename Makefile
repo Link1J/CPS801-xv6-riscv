@@ -14,6 +14,7 @@ OBJS = \
   $K/vm.o \
   $K/proc.o \
   $K/swtch.o \
+  $K/test.o \
   $K/trampoline.o \
   $K/trap.o \
   $K/syscall.o \
@@ -28,6 +29,7 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
+  $K/lru.o \
   $K/virtio_disk.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
@@ -138,6 +140,7 @@ UPROGS=\
 	$U/_stressfs\
 	$U/_sleep\
 	$U/_usertests\
+	$U/_test\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\

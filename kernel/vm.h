@@ -1,3 +1,9 @@
-void insert_into_lru(struct proc *p, struct page_info *page);
-void remove_from_lru(struct proc *p, struct page_info *page);
+struct page_info {
+    uint va;
+    uint pa;
+    struct page_info *next;
+    struct page_info *prev;
+    int in_swap;
+    uint swap_offset;
+};
 

@@ -62,6 +62,8 @@ struct dirent {
 struct proc;
 struct page_info;
 
-void swap_out_page(struct proc *p, struct page_info *page);
-void swap_in_page(struct proc *p, uint va);
+void swap_out_page(struct page_info *page);
+void swap_in_page(uint va);
+struct inode* create_swapfile(void);
+void init_swapfile();
 
