@@ -170,6 +170,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
     struct page_info *page = find_page_info((uint)va);
     if (page) {
+      page->pa = pa;  // Update the physical address of the existing page
       // Move page to front of LRU list
       remove_from_lru(page);
       insert_into_lru(page);

@@ -28,6 +28,12 @@
 // only one device
 struct superblock sb; 
 
+// Global variable for next available offset in the swap file
+uint64 next_swap_offset = 0;
+
+// Page size is 4096 (PGSIZE)
+#define SWAP_SLOT_SIZE PGSIZE
+
 // Read the super block.
 static void
 readsb(int dev, struct superblock *sb)
@@ -699,97 +705,101 @@ nameiparent(char *path, char *name)
 }
 
 
-// Swap in a page by reading it from the swap file
 void swap_in_page(uint va) {
-  struct page_info *page = lru_head;
-
-  // Iterate through the global LRU list to find the page corresponding to va
-  while (page != 0) {
-    if (page->va == va) {
-      break;  // Page found
-    }
-    page = page->next;  // Move to the next page in the global LRU list
+  struct page_info *page = find_page_info(va);
+  if (!page->in_swap) {
+    printf("swap_in_page: page not swapped out\n");
+    panic("swap_in_page: page not marked as swapped out");
   }
 
-  // If the page wasn't found or it's not swapped out, return
-  if (page == 0 || !page->in_swap) {
-    return;  // Nothing to do
+  // Make sure to check if the page is already mapped in memory (unmapped previously)
+  pte_t *pte = walk(myproc()->pagetable, va, 1);
+    
+  if (*pte & PTE_V) {
+    printf("swap_in_page: unmapping page before swapping in\n");
+    // The page was already mapped, so unmap it before swapping in
+    uvmunmap(myproc()->pagetable, va, 1, 1);
   }
 
-  // Allocate a new page for the swapped-in data
-  void *new_page = kalloc();
-  if (!new_page) panic("swap_in_page: out of memory");
-
-  // Open the swap file
+  begin_op();
   struct inode *ip = namei("/swapfile");
 
-  // If no swap file exists or it cannot be opened, panic
   if (ip == 0) {
+    end_op();
     panic("swap_in_page: no swap file found");
-    kfree(new_page);  // Free the allocated memory before returning
     return;
   }
 
-  // Lock the inode before reading the swap data
-  acquiresleep(&ip->lock);
+  ilock(ip);
 
-  // Read the page from the swap file into the newly allocated page
-  int read = readi(ip, 0, (uint64)new_page, page->swap_offset, PGSIZE);
-
-  // If the read was unsuccessful, panic
-  if (read != PGSIZE) {
+  // Allocate a new physical page
+  char *mem = kalloc();
+  if (!mem) {
+    iunlock(ip);
+    end_op();
+    panic("swap_in_page: failed to allocate memory");
+  }
+  printf("swap_in_page: allocated memory\n");
+  // Read from the swap file into the allocated memory
+  int read_result = readi(ip, 0, (uint64)mem, page->swap_offset, PGSIZE);
+  if (read_result != PGSIZE) {
+    iunlock(ip);
+    end_op();
     panic("swap_in_page: failed to read page from swap file");
-    releasesleep(&ip->lock);
-    kfree(new_page);  // Free the allocated memory before returning
-    return;
   }
+  printf("swap_in_page: read page from swap file into memory\n");
+  iunlock(ip);
 
-  // Map the newly allocated page into the process' memory
-  if (mappages(myproc()->pagetable, va, PGSIZE, (uint64)new_page, PTE_W | PTE_U | PTE_V) < 0) {
+  // Map the physical page to the process's virtual address
+  if (mappages(myproc()->pagetable, page->va, PGSIZE, (uint64)mem, PTE_W | PTE_U) != 0) {
     panic("swap_in_page: mappages failed");
-    releasesleep(&ip->lock);
-    kfree(new_page);  // Free the allocated memory before returning
-    return;
   }
+  printf("swap_in_page: mapped page into memory\n");
+  end_op();
 
-  // Insert the newly mapped page into the global LRU list
-  insert_into_lru(page);
-
-  // Update the page's physical address and mark it as no longer in swap
-  page->pa = (uint64)new_page;
+  // Update page_info
   page->in_swap = 0;
+  page->swap_offset = 0; 
 
-  // Release the inode lock
-  releasesleep(&ip->lock);
+  printf("swap_in_page: page successfully read back into memory\n");
 }
+
 
 // Swap out a page by writing it to the swap file
 void swap_out_page(struct page_info *page) {
+  begin_op();
   struct inode *ip;
-  uint block;
 
+  printf("swap_out_page: swapping out page\n");
   // Open the swap file
   ip = namei("/swapfile");
 
   if (ip == 0) {
+    end_op();
     panic("swap_out_page: no swap file found");
     return;
   }
 
-  // Allocate a block in the swap file using the balloc function
-  block = balloc(ip->dev);  // Allocates a block in the swap file
-  if (block == 0) {
-    panic("swap_out_page: failed to allocate block in swap file");
-    return;
+  ilock(ip); // lock swapfile inode
+
+  // Assign current offset and increment
+  uint offset = next_swap_offset;
+  next_swap_offset += SWAP_SLOT_SIZE;
+  printf("swap_out_page: writing page to swap file at offset %d\n", offset);
+  // Optionally extend file size if necessary
+  if (offset + PGSIZE > ip->size) {
+    printf("swap_out_page: extending swap file size to %d\n", offset + PGSIZE);
+    ip->size = offset + PGSIZE;
+    iupdate(ip);
   }
-
-  // Write the page to the swap file at the allocated block's offset
-  int offset = block * BSIZE;
+  
+  // Write the page
   int write_result = writei(ip, 0, (uint64)page->pa, offset, PGSIZE);
-
   if (write_result != PGSIZE) {
     panic("swap_out_page: failed to write page to swap file");
   }
+
+  iunlock(ip);
 
   // Mark the page as swapped out
   page->in_swap = 1;
@@ -798,8 +808,8 @@ void swap_out_page(struct page_info *page) {
   // Free the physical page after writing it to the swap file
   kfree((void *)(unsigned long)page->pa);
 
-  // Remove the page from the global LRU list since it's no longer in memory
-  remove_from_lru(page);
+  printf("swap_out_page: page swapped out successfully\n");
+  end_op();
 }
 
 
@@ -816,8 +826,11 @@ struct inode* create_swapfile(void) {
     printf("create_swapfile: found existing swapfile %p\n", ip);
     iunlockput(dp);
     ilock(ip);
-    if (ip->type == T_FILE)
+    if (ip->type == T_FILE) {
+      iunlock(ip);
       return ip;
+    }
+    // Not valid, clean up and fail
     iunlockput(ip);
     return 0;
   }
@@ -844,6 +857,7 @@ struct inode* create_swapfile(void) {
     return 0;
   }
   printf("create_swapfile: dirlink succeeded\n");
+  iunlock(ip);
   iunlockput(dp);
   return ip;
 }
