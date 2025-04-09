@@ -11,6 +11,8 @@
 
 void freerange(void *pa_start, void *pa_end);
 
+uint memcount[PHYSTOP/PGSIZE] = {0};
+
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
@@ -35,8 +37,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    kmemincref(p); // Trick kfree that the page is allocated
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +54,12 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // Subtract 1 atomically, and return if people are still using the page
+  unsigned int count = __atomic_sub_fetch(memcount + PA2INDEX(pa), 1, __ATOMIC_SEQ_CST);
+  if (count > 0) {
+    return;
+  }
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -73,10 +83,30 @@ kalloc(void)
   acquire(&kmem.lock);
   r = kmem.freelist;
   if(r)
+  {
     kmem.freelist = r->next;
+    // Inc ref, and panic if the ref count was not 0
+    if (kmemincref(r) != 0) {
+      panic("Attempted to reuse memory that was in use");
+    }
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+// Add 1 atomically, and return the previous value
+uint
+kmemincref(void *pa)
+{
+  return __atomic_fetch_add(memcount + PA2INDEX(pa), 1, __ATOMIC_SEQ_CST);
+}
+
+// Read mem ref count
+uint
+kmemrefcount(void *pa) 
+{
+  return __atomic_load_n(memcount + PA2INDEX(pa), __ATOMIC_SEQ_CST);
 }

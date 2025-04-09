@@ -65,7 +65,36 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if (r_scause() == 15) {
+    
+    // Failed Write
+    uint64 va_page = PGROUNDDOWN(r_stval());
+    pte_t* pte = walk(p->pagetable, va_page, 0);
+    if (((*pte) & PTE_COW) != 0) {
+      uint64 pa = PTE2PA(*pte);
+      if (kmemrefcount((void*)pa) == 0) 
+        panic("Attempting to copy free page");
+
+      // Copy page
+      char* mem = kalloc();
+      if(mem == NULL)
+        panic("kalloc");
+      memmove(mem, (void*)pa, PGSIZE);
+      
+      // Map new page
+      uint flags = (PTE_FLAGS(*pte) & ~(PTE_COW)) | PTE_W;
+      if (mappages(p->pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0)
+        panic("Failed to remap CoW page");
+      
+      // "Free" CoW page
+      kfree((void*)pa);
+    } else {
+      // Tried to write to read-only page.
+      printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+      setkilled(p);
+    }
+  }else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
