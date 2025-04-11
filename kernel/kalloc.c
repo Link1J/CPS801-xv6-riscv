@@ -22,6 +22,7 @@ struct run {
 
 struct {
   struct spinlock lock;
+  struct spinlock cow;
   struct run *freelist;
 } kmem;
 
@@ -29,6 +30,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&kmem.cow, "kcow");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -56,7 +58,10 @@ kfree(void *pa)
     panic("kfree");
 
   // Subtract 1 atomically, and return if people are still using the page
-  unsigned int count = __atomic_sub_fetch(memcount + PA2INDEX(pa), 1, __ATOMIC_SEQ_CST);
+  uint count = __atomic_sub_fetch(memcount + PA2INDEX(pa), 1, __ATOMIC_SEQ_CST);
+  if (count == 0xFFFFFFFF) {
+    panic("Super free page");
+  }
   if (count > 0) {
     return;
   }
@@ -109,4 +114,43 @@ uint
 kmemrefcount(void *pa) 
 {
   return __atomic_load_n(memcount + PA2INDEX(pa), __ATOMIC_SEQ_CST);
+}
+
+int
+kcow(pagetable_t pagetable, uint64 va)
+{  
+  uint64 va_page = PGROUNDDOWN(va);
+  if (va_page >= MAXVA){
+    return -1;
+  }
+  pte_t* pte = walk(pagetable, va_page, 1);
+  if (pte == NULL) {
+    return -1;
+  }
+
+  if (((*pte) & PTE_COW) == 0) {
+    return 0;
+  }
+  
+  acquire(&kmem.cow);
+
+  uint64 pa = PTE2PA(*pte);
+  if (kmemrefcount((void*)pa) == 0) 
+    panic("Attempting to copy free page");
+
+  // Copy page
+  char* mem = kalloc();
+  if (mem == NULL)
+    panic("Failed to get new page for CoW page");
+  memmove(mem, (void*)pa, PGSIZE);
+  
+  // Map new page
+  uint flags = (PTE_FLAGS(*pte) & ~(PTE_COW)) | PTE_W;
+  if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0)
+    panic("Failed to remap CoW page");
+  
+  // "Free" CoW page
+  kfree((void*)pa);
+  release(&kmem.cow);
+  return 1;
 }
