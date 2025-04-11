@@ -22,7 +22,6 @@ struct run {
 
 struct {
   struct spinlock lock;
-  struct spinlock cow;
   struct run *freelist;
 } kmem;
 
@@ -30,7 +29,6 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  initlock(&kmem.cow, "kcow");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -123,7 +121,7 @@ kcow(pagetable_t pagetable, uint64 va)
   if (va_page >= MAXVA){
     return -1;
   }
-  pte_t* pte = walk(pagetable, va_page, 1);
+  pte_t* pte = walk(pagetable, va_page, 0);
   if (pte == NULL) {
     return -1;
   }
@@ -131,26 +129,32 @@ kcow(pagetable_t pagetable, uint64 va)
   if (((*pte) & PTE_COW) == 0) {
     return 0;
   }
-  
-  acquire(&kmem.cow);
 
   uint64 pa = PTE2PA(*pte);
-  if (kmemrefcount((void*)pa) == 0) 
+  uint count = kmemrefcount((void*)pa);
+  if (count == 0) 
     panic("Attempting to copy free page");
 
-  // Copy page
-  char* mem = kalloc();
-  if (mem == NULL)
-    panic("Failed to get new page for CoW page");
-  memmove(mem, (void*)pa, PGSIZE);
-  
-  // Map new page
-  uint flags = (PTE_FLAGS(*pte) & ~(PTE_COW)) | PTE_W;
-  if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0)
-    panic("Failed to remap CoW page");
-  
-  // "Free" CoW page
-  kfree((void*)pa);
-  release(&kmem.cow);
+  if (count == 1)
+  {
+    // there are no copys
+    *pte = (*pte & ~(PTE_COW)) | PTE_W;
+  }
+  else 
+  {
+    // Copy page
+    char* mem = kalloc();
+    if (mem == NULL)
+      panic("Failed to get new page for CoW page");
+    memmove(mem, (void*)pa, PGSIZE);
+    
+    // Map new page
+    uint flags = (PTE_FLAGS((uint64)*pte) & ~(PTE_COW)) | PTE_W;
+    if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0)
+      panic("Failed to remap CoW page");
+    
+    // "Free" CoW page
+    kfree((void*)pa);
+  }
   return 1;
 }
