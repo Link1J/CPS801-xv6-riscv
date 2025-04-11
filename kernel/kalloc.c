@@ -11,7 +11,7 @@
 
 void freerange(void *pa_start, void *pa_end);
 
-uint memcount[PHYSTOP/PGSIZE] = {0};
+uint memcount[(PHYSTOP/PGSIZE) + 1] = {0};
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -29,6 +29,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  memcount[PHYSTOP/PGSIZE] = 0xAAFFAAFF;
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -125,8 +126,11 @@ kcow(pagetable_t pagetable, uint64 va)
   if (pte == NULL) {
     return -1;
   }
-
-  if (((*pte) & PTE_COW) == 0) {
+  // Checking PTE_X seems like a hack. But it fits the problem.
+  if ((*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_X) != 0) {
+    return -1;
+  }
+  if ((*pte & PTE_COW) == 0) {
     return 0;
   }
 
@@ -149,7 +153,7 @@ kcow(pagetable_t pagetable, uint64 va)
     memmove(mem, (void*)pa, PGSIZE);
     
     // Map new page
-    uint flags = (PTE_FLAGS((uint64)*pte) & ~(PTE_COW)) | PTE_W;
+    uint flags = (PTE_FLAGS(*pte) & ~(PTE_COW)) | PTE_W;
     if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0)
       panic("Failed to remap CoW page");
     

@@ -319,7 +319,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    *pte = (*pte & ~(PTE_W)) | PTE_COW;
+    if ((*pte & PTE_W) == PTE_W)
+      *pte = (*pte & ~(PTE_W)) | PTE_COW;
     kmemincref((void*)pa);
     if(mappages(new, i, PGSIZE, pa, PTE_FLAGS(*pte)) != 0){
       goto err;
@@ -356,10 +357,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    if(kcow(pagetable, va0) < 0)
+    if (kcow(pagetable, va0) < 0)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0)
+    if (pte == 0)
       return -1;
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
