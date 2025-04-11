@@ -65,6 +65,7 @@ void            kfree(void *);
 void            kinit(void);
 uint            kmemincref(void *);
 uint            kmemrefcount(void *);
+int             kcow(pagetable_t, uint64);
 
 // log.c
 void            initlog(int, struct superblock*);
