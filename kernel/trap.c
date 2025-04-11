@@ -65,6 +65,19 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 15) {
+    // Failed Write
+    if (kcow(p->pagetable, PGROUNDDOWN(r_stval())) <= 0) {
+      // Tried to write to read-only page.
+      printf("usertrap(): Write to Read-only page scause 0x%lx pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+      setkilled(p);
+    }
+  } else if (r_scause() == 2) {
+    // Invaild instruction
+    printf("usertrap(): Invaild instruction scause 0x%lx pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    setkilled(p);
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
