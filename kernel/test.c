@@ -20,9 +20,9 @@ void test_eviction(void){
     printf("Eviction triggered...\n");
     evict_page();
     // Verify that the LRU list evicted page1 (since it was the least recently used)
-    if (lru_tail == prev_tail) {
-        printf("Test failed: lru_tail is the same\n");
-        panic("Test failed: lru_tail is the same");
+    if (!prev_tail->in_swap) {
+        printf("Test failed: lru_tail has not been marked as swapped\n");
+        panic("Test failed: lru_tail has not been marked as swap");
     }
     printf("After eviction, LRU head: %p, LRU tail: %p\n", lru_head, lru_tail);
     printf("Test passed: Eviction functionality works as expected\n");

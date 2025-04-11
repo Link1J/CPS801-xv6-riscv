@@ -718,14 +718,14 @@ void swap_in_page(uint va) {
     printf("swap_in_page: page not swapped out\n");
     panic("swap_in_page: page not marked as swapped out");
   }
-
+  struct proc *p = page->proc;
   // Make sure to check if the page is already mapped in memory (unmapped previously)
-  pte_t *pte = walk(myproc()->pagetable, va, 1);
+  pte_t *pte = walk(p->pagetable, va, 1);
     
   if (*pte & PTE_V) {
     printf("swap_in_page: unmapping page before swapping in\n");
     // The page was already mapped, so unmap it before swapping in
-    uvmunmap(myproc()->pagetable, va, 1, 1);
+    uvmunmap(p->pagetable, va, 1, 1);
   }
 
   begin_op();
@@ -758,7 +758,7 @@ void swap_in_page(uint va) {
   iunlock(ip);
 
   // Map the physical page to the process's virtual address
-  if (mappages(myproc()->pagetable, page->va, PGSIZE, (uint64)mem, PTE_W | PTE_U) != 0) {
+  if (mappages(p->pagetable, page->va, PGSIZE, (uint64)mem, PTE_W | PTE_U) != 0) {
     panic("swap_in_page: mappages failed");
   }
   printf("swap_in_page: mapped page into memory\n");
@@ -767,6 +767,8 @@ void swap_in_page(uint va) {
   // Update page_info
   page->in_swap = 0;
   page->swap_offset = 0; 
+  remove_from_lru(page);      
+  insert_into_lru(page);  // Add back to head = most recently used
 
   printf("swap_in_page: page successfully read back into memory\n");
 }

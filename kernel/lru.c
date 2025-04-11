@@ -65,23 +65,22 @@ void print_lru_list(void) {
 
 void evict_page(void) {
     printf("Evicting page...\n");
-    // Select the Least Recently Used (LRU) page (tail of the global LRU list)
+
     struct page_info *victim = lru_tail;
-  
-    // If there is no page to evict, return
-    if (victim == NULL) {
-      return;  // No page to evict
+
+    // Search backward in LRU list for a page that is in memory and not already swapped
+    while (victim && (victim->in_swap || victim->pa == 0)) {
+        victim = victim->prev;
     }
-  
-    // Remove the page from the global LRU list
-    remove_from_lru(victim);
-  
-    // Write the page to swap space (if necessary)
-    if (victim->in_swap == 0 && victim->pa != 0) {
-      swap_out_page(victim);  // Swap out the page if it was in swap
+
+    // If no suitable page found, just return
+    if (victim == 0) {
+        printf("evict_page: no suitable victim found\n");
+        return;
     }
-    // // Free the physical page after it's written to swap
-    // kfree((void *)(unsigned long)victim->pa);
+
+    // Swap out the selected victim
+    swap_out_page(victim);
 }
   
 // Find the page_info for a given virtual address in the LRU list
