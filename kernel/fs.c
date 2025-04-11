@@ -52,6 +52,7 @@ fsinit(int dev) {
   if(sb.magic != FSMAGIC)
     panic("invalid file system");
   initlog(dev, &sb);
+  init_swapfile();
 }
 
 // Zero a block.
@@ -707,6 +708,12 @@ nameiparent(char *path, char *name)
 
 void swap_in_page(uint va) {
   struct page_info *page = find_page_info(va);
+
+  if (page == 0) {
+    printf("swap_in_page: page not found\n");
+    panic("swap_in_page: page_info not found");
+  }
+  
   if (!page->in_swap) {
     printf("swap_in_page: page not swapped out\n");
     panic("swap_in_page: page not marked as swapped out");
@@ -765,51 +772,68 @@ void swap_in_page(uint va) {
 }
 
 
-// Swap out a page by writing it to the swap file
 void swap_out_page(struct page_info *page) {
-  begin_op();
-  struct inode *ip;
+  if (!page)
+    panic("swap_out_page: page is NULL");
 
-  printf("swap_out_page: swapping out page\n");
-  // Open the swap file
-  ip = namei("/swapfile");
+  if (page->pa == 0)
+    panic("swap_out_page: invalid physical address (pa == 0)");
 
-  if (ip == 0) {
-    end_op();
-    panic("swap_out_page: no swap file found");
-    return;
+  struct proc *p = page->proc;
+  if (!p)
+    panic("swap_out_page: no associated process");
+
+  // Allocate a kernel buffer to hold page contents temporarily
+  char *kbuf = kalloc();
+  if (!kbuf)
+    panic("swap_out_page: kalloc failed");
+
+  // Copy contents from user virtual memory to kernel buffer
+  if (copyin(p->pagetable, kbuf, (uint64)page->va, PGSIZE) < 0) {
+    kfree(kbuf);
+    panic("swap_out_page: copyin failed");
   }
 
-  ilock(ip); // lock swapfile inode
+  begin_op();
+  struct inode *ip = namei("/swapfile");
+  if (!ip) {
+    end_op();
+    kfree(kbuf);
+    panic("swap_out_page: no swap file found");
+  }
 
-  // Assign current offset and increment
+  ilock(ip);
+
   uint offset = next_swap_offset;
   next_swap_offset += SWAP_SLOT_SIZE;
-  printf("swap_out_page: writing page to swap file at offset %d\n", offset);
-  // Optionally extend file size if necessary
   if (offset + PGSIZE > ip->size) {
-    printf("swap_out_page: extending swap file size to %d\n", offset + PGSIZE);
     ip->size = offset + PGSIZE;
     iupdate(ip);
   }
-  
-  // Write the page
-  int write_result = writei(ip, 0, (uint64)page->pa, offset, PGSIZE);
+
+  // Write kernel buffer contents to swap file
+  int write_result = writei(ip, 0, (uint64)kbuf, offset, PGSIZE);
   if (write_result != PGSIZE) {
+    iunlock(ip);
+    end_op();
+    kfree(kbuf);
     panic("swap_out_page: failed to write page to swap file");
   }
 
   iunlock(ip);
+  end_op();
 
   // Mark the page as swapped out
   page->in_swap = 1;
   page->swap_offset = offset;
 
-  // Free the physical page after writing it to the swap file
-  kfree((void *)(unsigned long)page->pa);
+  // Free the physical page
+  kfree((void *)(uint64)page->pa);
+  page->pa = 0;
+
+  kfree(kbuf); // free temporary kernel buffer
 
   printf("swap_out_page: page swapped out successfully\n");
-  end_op();
 }
 
 

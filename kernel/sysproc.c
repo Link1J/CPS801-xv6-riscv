@@ -137,7 +137,6 @@ sys_ps(void)
 }
 
 int sys_runtestcases(void){
-  init_swapfile();
   test_page_replacement();
   return 0;
 }

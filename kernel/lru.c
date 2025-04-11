@@ -77,7 +77,7 @@ void evict_page(void) {
     remove_from_lru(victim);
   
     // Write the page to swap space (if necessary)
-    if (victim->in_swap) {
+    if (victim->in_swap == 0 && victim->pa != 0) {
       swap_out_page(victim);  // Swap out the page if it was in swap
     }
     // // Free the physical page after it's written to swap

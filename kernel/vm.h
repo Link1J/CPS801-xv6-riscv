@@ -5,5 +5,8 @@ struct page_info {
     struct page_info *prev;
     int in_swap;
     uint swap_offset;
+    struct proc *proc;      // Process owning the page
+
 };
 
+void free_page_info(struct page_info *pi);

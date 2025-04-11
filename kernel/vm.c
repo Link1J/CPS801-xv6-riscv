@@ -10,6 +10,33 @@
 #include "vm.h"
 #include "lru.h"
 
+#define MAX_PAGES 1000
+
+static struct page_info page_pool[MAX_PAGES];
+static int used[MAX_PAGES];  // 0 = free, 1 = in use
+
+// Allocate an unused page_info struct
+struct page_info *get_page_info(void) {
+  for (int i = 0; i < MAX_PAGES; i++) {
+    if (!used[i]) {
+      used[i] = 1;
+      memset(&page_pool[i], 0, sizeof(struct page_info));
+      return &page_pool[i];
+    }
+  }
+  panic("No free page_info structs available");
+  return 0;
+}
+
+// Free a previously used page_info struct
+void free_page_info(struct page_info *pi) {
+  int index = pi - page_pool;
+  if (index < 0 || index >= MAX_PAGES)
+    panic("Invalid page_info pointer");
+
+  used[index] = 0;
+}
+
 /*
  * the kernel's page table.
  */
@@ -167,31 +194,37 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    
+    if (perm & PTE_U) {
+      struct page_info *page = find_page_info((uint)a);
+      if (page) {
+        page->pa = pa;  // Update the physical address of the existing page
+        page->proc = myproc();  // Associate with the current proces
+        // Move page to front of LRU list
+        remove_from_lru(page);
+        insert_into_lru(page);
+      }else{
+        struct page_info *new_page;
+        // Allocate a page_info struct and associate it with the new page
+        new_page = get_page_info();
+        // new_page = (struct page_info *)kalloc();
+        if (!new_page) {
+          panic("mappages: out of memory");  // Out of memory for the page_info struct
+        }
+        // Fill in the page_info struct 
+        new_page->va = a;               // Set the virtual address of the page
+        new_page->pa = pa;               // Set the physical address of the page
+        new_page->in_swap = 0;           // Initially, the page is not swapped
+        new_page->next = 0;           // No next page in the LRU list yet
+        new_page->prev = 0;           // No previous page in the LRU list yet
+        new_page->swap_offset = 0;       // No swap offset yet
+        new_page->proc = myproc();      // Set the process that owns this page
 
-    struct page_info *page = find_page_info((uint)va);
-    if (page) {
-      page->pa = pa;  // Update the physical address of the existing page
-      // Move page to front of LRU list
-      remove_from_lru(page);
-      insert_into_lru(page);
-    }else{
-      struct page_info *new_page;
-      // Allocate a page_info struct and associate it with the new page
-      new_page = (struct page_info *)kalloc();
-      if (!new_page) {
-        panic("mappages: out of memory");  // Out of memory for the page_info struct
+        // Insert the page_info struct into the LRU list
+        insert_into_lru(new_page);
       }
-      // Fill in the page_info struct 
-      new_page->va = a;               // Set the virtual address of the page
-      new_page->pa = pa;               // Set the physical address of the page
-      new_page->in_swap = 0;           // Initially, the page is not swapped
-      new_page->next = 0;           // No next page in the LRU list yet
-      new_page->prev = 0;           // No previous page in the LRU list yet
-      new_page->swap_offset = 0;       // No swap offset yet
-
-      // Insert the page_info struct into the LRU list
-      insert_into_lru(new_page);
     }
+    
 
     if(a == last)
       break;
@@ -224,6 +257,12 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
+     // Custom logic to clean up page_info
+     struct page_info *info = find_page_info((uint)a);
+     if (info) {
+      remove_from_lru(info);    // Remove from LRU list
+      free_page_info(info);   // Free page_info struct
+     }
     *pte = 0;
   }
 }

@@ -53,23 +53,21 @@ void test_insert(void* page, int page_num) {
     
 }
 
+int is_page_swapped_out(struct page_info *page) {
+    return page && page->in_swap && page->swap_offset > 0 && page->pa == 0;
+}
 
 void test_swap(struct page_info *page) {
     printf("\n\nStarting swap test for page %p\n", page);
     // Swap out the page to the swap file
     swap_out_page(page);  // This function writes the page to the swap file
-
-    // Check if the page is actually swapped back in to memory (you can verify the page's physical address)
-    // For example, checking if the page info has been updated to reflect the new physical address.
-    struct page_info *page_after_swap_out = find_page_info((uint64)page->va);
-    if (!page_after_swap_out->in_swap) {
-        printf("Test failed: Page not found in swapfile after swap-out.\n");
-        panic("Test failed: Page not found in swapfile after swap-out.");
+    if (!is_page_swapped_out(page)) {
+        printf("Test failed: page still present in memory after swap-out.\n");
+        panic("Test failed: page still present in memory after swap-out.");
     }
     printf("Swapping back in...\n");
     swap_in_page((uint64)page->va);  // This function reads the page back from the swap file
-    struct page_info *page_after_swap_in = find_page_info((uint64)page->va);
-    if (page_after_swap_in->in_swap) {
+    if (is_page_swapped_out(page)){
         printf("Test failed: Page not found in memory after swap-in.\n");
         panic("Test failed: Page not found in memory after swap-in.");
     }
@@ -101,12 +99,11 @@ void test_page_replacement(void) {
     test_insert(page4, 4);
     test_eviction();
     test_swap(lru_head);  // Test swapping in the least recently used page
-
     uvmunmap(myproc()->pagetable, (uint64)page1, 1, 1);
     uvmunmap(myproc()->pagetable, (uint64)page2, 1, 1);
     uvmunmap(myproc()->pagetable, (uint64)page3, 1, 1);
     uvmunmap(myproc()->pagetable, (uint64)page4, 1, 1);
-
+    
 }
 
 
