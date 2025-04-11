@@ -5,6 +5,9 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "fs.h"
+#include "test.h"
+#include "lru.h"
 
 uint64
 sys_exit(void)
@@ -131,4 +134,9 @@ sys_ps(void)
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
     kfree(argv[i]);
   return -1;
+}
+
+int sys_runtestcases(void){
+  test_page_replacement();
+  return 0;
 }

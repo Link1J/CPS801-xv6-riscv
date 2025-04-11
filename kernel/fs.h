@@ -58,3 +58,12 @@ struct dirent {
   char name[DIRSIZ];
 };
 
+// Forward declarations
+struct proc;
+struct page_info;
+
+void swap_out_page(struct page_info *page);
+void swap_in_page(uint va);
+struct inode* create_swapfile(void);
+void init_swapfile();
+

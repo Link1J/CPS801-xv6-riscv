@@ -8,6 +8,10 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
+#include "fs.h"
+#include "vm.h"
+#include "lru.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -65,18 +69,26 @@ kfree(void *pa)
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
-void *
-kalloc(void)
-{
+void *kalloc(void) {
   struct run *r;
+  struct proc *p = myproc();  // Get the current process
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if (r) {
     kmem.freelist = r->next;
-  release(&kmem.lock);
+    release(&kmem.lock);
+    memset((char*)r, 0, PGSIZE);
+    return (void*)r;
+  }
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  // No free memory, trigger page eviction
+  if (!r && p) {
+    evict_page(); // Evict a page from the process's memory
+    release(&kmem.lock);
+    return kalloc();  // Try allocation again after eviction
+  }
+
+  release(&kmem.lock);
+  return 0; // Out of memory and no pages can be evicted
 }

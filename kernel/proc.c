@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "lru.h"
+#include "vm.h"
 
 struct cpu cpus[NCPU];
 
@@ -169,6 +171,16 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // Free memory associated with process in LRU list
+  for (struct page_info *pi = lru_head; pi; pi = pi->next) {
+    if (pi->proc == p) {
+      remove_from_lru(pi);
+      if (pi->pa) {
+          kfree((void *)(unsigned long)pi->pa);
+      }
+    free_page_info(pi);
+    }
+  }
 }
 
 // Create a user page table for a given process, with no user memory,

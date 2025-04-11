@@ -20,11 +20,19 @@
 #include "fs.h"
 #include "buf.h"
 #include "file.h"
+#include "vm.h"
+#include "lru.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // there should be one superblock per disk device, but we run with
 // only one device
 struct superblock sb; 
+
+// Global variable for next available offset in the swap file
+uint64 next_swap_offset = 0;
+
+// Page size is 4096 (PGSIZE)
+#define SWAP_SLOT_SIZE PGSIZE
 
 // Read the super block.
 static void
@@ -44,6 +52,7 @@ fsinit(int dev) {
   if(sb.magic != FSMAGIC)
     panic("invalid file system");
   initlog(dev, &sb);
+  init_swapfile();
 }
 
 // Zero a block.
@@ -694,4 +703,199 @@ struct inode*
 nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
+}
+
+
+void swap_in_page(uint va) {
+  struct page_info *page = find_page_info(va);
+
+  if (page == 0) {
+    printf("swap_in_page: page not found\n");
+    panic("swap_in_page: page_info not found");
+  }
+  
+  if (!page->in_swap) {
+    printf("swap_in_page: page not swapped out\n");
+    panic("swap_in_page: page not marked as swapped out");
+  }
+  struct proc *p = page->proc;
+  // Make sure to check if the page is already mapped in memory (unmapped previously)
+  pte_t *pte = walk(p->pagetable, va, 1);
+    
+  if (*pte & PTE_V) {
+    printf("swap_in_page: unmapping page before swapping in\n");
+    // The page was already mapped, so unmap it before swapping in
+    uvmunmap(p->pagetable, va, 1, 1);
+  }
+
+  begin_op();
+  struct inode *ip = namei("/swapfile");
+
+  if (ip == 0) {
+    end_op();
+    panic("swap_in_page: no swap file found");
+    return;
+  }
+
+  ilock(ip);
+
+  // Allocate a new physical page
+  char *mem = kalloc();
+  if (!mem) {
+    iunlock(ip);
+    end_op();
+    panic("swap_in_page: failed to allocate memory");
+  }
+  printf("swap_in_page: allocated memory\n");
+  // Read from the swap file into the allocated memory
+  int read_result = readi(ip, 0, (uint64)mem, page->swap_offset, PGSIZE);
+  if (read_result != PGSIZE) {
+    iunlock(ip);
+    end_op();
+    panic("swap_in_page: failed to read page from swap file");
+  }
+  printf("swap_in_page: read page from swap file into memory\n");
+  iunlock(ip);
+
+  // Map the physical page to the process's virtual address
+  if (mappages(p->pagetable, page->va, PGSIZE, (uint64)mem, PTE_W | PTE_U) != 0) {
+    panic("swap_in_page: mappages failed");
+  }
+  printf("swap_in_page: mapped page into memory\n");
+  end_op();
+
+  // Update page_info
+  page->in_swap = 0;
+  page->swap_offset = 0; 
+  remove_from_lru(page);      
+  insert_into_lru(page);  // Add back to head = most recently used
+
+  printf("swap_in_page: page successfully read back into memory\n");
+}
+
+
+void swap_out_page(struct page_info *page) {
+  if (!page)
+    panic("swap_out_page: page is NULL");
+
+  if (page->pa == 0)
+    panic("swap_out_page: invalid physical address (pa == 0)");
+
+  struct proc *p = page->proc;
+  if (!p)
+    panic("swap_out_page: no associated process");
+
+  // Allocate a kernel buffer to hold page contents temporarily
+  char *kbuf = kalloc();
+  if (!kbuf)
+    panic("swap_out_page: kalloc failed");
+
+  // Copy contents from user virtual memory to kernel buffer
+  if (copyin(p->pagetable, kbuf, (uint64)page->va, PGSIZE) < 0) {
+    kfree(kbuf);
+    panic("swap_out_page: copyin failed");
+  }
+
+  begin_op();
+  struct inode *ip = namei("/swapfile");
+  if (!ip) {
+    end_op();
+    kfree(kbuf);
+    panic("swap_out_page: no swap file found");
+  }
+
+  ilock(ip);
+
+  uint offset = next_swap_offset;
+  next_swap_offset += SWAP_SLOT_SIZE;
+  if (offset + PGSIZE > ip->size) {
+    ip->size = offset + PGSIZE;
+    iupdate(ip);
+  }
+
+  // Write kernel buffer contents to swap file
+  int write_result = writei(ip, 0, (uint64)kbuf, offset, PGSIZE);
+  if (write_result != PGSIZE) {
+    iunlock(ip);
+    end_op();
+    kfree(kbuf);
+    panic("swap_out_page: failed to write page to swap file");
+  }
+
+  iunlock(ip);
+  end_op();
+
+  // Mark the page as swapped out
+  page->in_swap = 1;
+  page->swap_offset = offset;
+
+  // Free the physical page
+  kfree((void *)(uint64)page->pa);
+  page->pa = 0;
+
+  kfree(kbuf); // free temporary kernel buffer
+
+  printf("swap_out_page: page swapped out successfully\n");
+}
+
+
+struct inode* create_swapfile(void) {
+  struct inode *ip, *dp;
+  char name[DIRSIZ] = "swapfile";
+  // Obtain the root directory inode
+  dp = iget(ROOTDEV, ROOTINO);
+  ilock(dp);
+  printf("create_swapfile: found root directory\n");
+
+  // Check if the swapfile already exists
+  if ((ip = dirlookup(dp, name, 0)) != 0) {
+    printf("create_swapfile: found existing swapfile %p\n", ip);
+    iunlockput(dp);
+    ilock(ip);
+    if (ip->type == T_FILE) {
+      iunlock(ip);
+      return ip;
+    }
+    // Not valid, clean up and fail
+    iunlockput(ip);
+    return 0;
+  }
+
+  // Allocate a new inode for the swapfile
+  if ((ip = ialloc(dp->dev, T_FILE)) == 0) {
+    printf("create_swapfile: ialloc failed\n");
+    iunlockput(dp);
+    return 0;
+  }
+  printf("create_swapfile: allocated inode %p\n", ip);
+  ilock(ip);
+  ip->major = 0;
+  ip->minor = 0;
+  ip->nlink = 1;
+  iupdate(ip);
+
+  if (dirlink(dp, name, ip->inum) < 0) {
+    printf("create_swapfile: dirlink failed\n");
+    ip->nlink = 0;
+    iupdate(ip);
+    iunlockput(ip);
+    iunlockput(dp);
+    return 0;
+  }
+  printf("create_swapfile: dirlink succeeded\n");
+  iunlock(ip);
+  iunlockput(dp);
+  return ip;
+}
+
+
+void init_swapfile() {
+  printf("Init swapfile...\n");
+  begin_op();
+  struct inode *swapip = create_swapfile();
+  end_op();
+
+  if (swapip == 0){
+    panic("Failed to create swapfile");
+  }
 }
